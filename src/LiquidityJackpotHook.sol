@@ -189,12 +189,12 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         uint256 currency0Amount = msg.value;
         uint128 inputLiquidityAmount = poolManager.getLiquidity(key.toId());
 
-        // Mint claim tokens to user equal to their `inputAmount`
         uint256 positionId = getPositionId(key, currency0Amount, isLong, inputLiquidityAmount, nextJackPots[key.toId()]);
         _mint(msg.sender, positionId, currency0Amount, "");
 
         uint256 nextJackpotTime = nextJackPots[key.toId()];
         jackpotAmounts[key.toId()][nextJackpotTime] += currency0Amount;
+        jackpotRemainingClaims[key.toId()][nextJackpotTime] += currency0Amount;
 
         return inputLiquidityAmount;
     }
@@ -221,12 +221,12 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
             revert NothingToCashout();
         }
 
-        // TODO! Calculate cashout amount
         uint256 cashoutAmount = calculateCashoutAmount(key, currency0Amount, isLong, inputLiquidityAmount, currentJackpot);
 
         _burn(msg.sender, positionId, positionTokens);
         
         jackpotAmounts[key.toId()][currentJackpot] -= cashoutAmount;
+        jackpotRemainingClaims[key.toId()][nextJackPotTime] -= positionTokens;
 
         payable(msg.sender).transfer(cashoutAmount);
     }
@@ -263,16 +263,13 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
 
         // Take some % to the Liquidity providers
 
-        // Take some % winner of the day
-
         uint256 userPercentage = (100 * inputAmountToClaimFor) / jackpotAmount;
 
         uint256 winningAmount = (jackpotAmount * userPercentage) / 100;
 
-        payable(msg.sender).transfer(winningAmount);
-
-        // TODO! should I have this here?
         jackpotRemainingClaims[key.toId()][nextJackPotTime] -= inputAmountToClaimFor;
+
+        payable(msg.sender).transfer(winningAmount);
     }
 
     // Internal Functions
@@ -288,7 +285,6 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         uint128 currentLiquidity = poolManager.getLiquidity(key.toId());
 
         jackpotLiquidities[key.toId()][nextJackpotTime] = currentLiquidity;
-        jackpotRemainingClaims[key.toId()][nextJackpotTime] = jackpotAmounts[key.toId()][nextJackpotTime];
         nextJackPots[key.toId()] = nextJackpotTime + 24 hours;
 
         return true;
@@ -311,7 +307,6 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
                 betState = 1e18;
             } else {
                 uint256 ratioLiquidity = (orderLiquidity * 1e18) / currentLiquidity;
-                console.log('ratioLiquidity', ratioLiquidity);
                 betState = ratioLiquidity;
             }
         }
@@ -338,6 +333,10 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return jackpotAmounts[key.toId()][nextJackPotTime];
     }
 
+    function getJackpotRemainingClaims(PoolKey calldata key, uint256 nextJackPotTime) public view returns (uint256) {
+        return jackpotRemainingClaims[key.toId()][nextJackPotTime];
+    }
+
     function getJackpotLiquidity(PoolKey calldata key, uint256 nextJackPotTime) public view returns (uint128) {
         return jackpotLiquidities[key.toId()][nextJackPotTime];
     }
@@ -348,39 +347,29 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         bool isLong,
         uint128 inputLiquidityAmount,
         uint256 nextJackPot) public view returns (uint256) {
-        uint256 cashoutPercentage = 0;
+        
         uint64 oneDayInSeconds = 86400;
         
         uint256 timeRemaining = nextJackPot - block.timestamp;
 
-        console.log('timeRemaining seconds', timeRemaining);
-
         uint256 currentBetState = _calculateBetState(key, inputLiquidityAmount, isLong);
-
-        console.log('currentBetState', currentBetState);
 
         uint256 timeFraction = (oneDayInSeconds - timeRemaining) * 1e18 / oneDayInSeconds;
 
-        console.log('timeFraction', timeFraction);
+        int256 timeFractionInt = int256(timeFraction);  // Convert to int for calculation
 
-        if  (timeFraction == 0) {
-            cashoutPercentage = currentBetState;
-        } else {
-            cashoutPercentage = currentBetState * timeFraction / 1e18;
-        }
+        int256 cashoutPercentage = -(timeFractionInt * timeFractionInt / 1e18) + 1e18;
+        
+        uint256 cashoutPercentageWithBetState = uint256(cashoutPercentage) * currentBetState / 1e18;
 
-
-        console.log('cashoutPercentage', cashoutPercentage);
-        console.log('totalAmountCashout', cashoutPercentage * currency0Amount / 1e18);
-
-        uint256 cashoutAmountBeforeTax = cashoutPercentage * currency0Amount / 1e18;
+        uint256 cashoutAmountBeforeTax = cashoutPercentageWithBetState * currency0Amount / 1e18;
 
         uint256 jackpotTax = cashoutAmountBeforeTax / 100;
-        // TODO! LP part
-        uint256 cashoutAmountAfterTax = cashoutAmountBeforeTax - jackpotTax;
 
-        console.log('cashoutAmountAfterTax', cashoutAmountAfterTax);
+        // TODO: Consider LP part
+        uint256 cashoutAmountAfterTax = cashoutAmountBeforeTax - jackpotTax;
 
         return cashoutAmountAfterTax;
     }
+
 }

@@ -244,7 +244,22 @@ contract LiquidityJackpotHookTest is Test, Deployers {
         assertEq(currentBeforeBalance, currentAfterBalance);
     }
 
-    function test_redeem_jackpotNotExecutedOrNoLiquidity_NothingToClaim() public {
+    function test_redeem_jackpotNoLiquidity_NothingToClaim() public {
+        // Set up initial conditions
+        uint256 currency0Amount = 1 ether;
+        uint128 inputLiquidityAmount = 10 ether;
+        bool isLong = true;
+        uint256 nextExecutionTime = hook.getNextExecutionTime(key);
+        uint256 inputAmountToClaimFor = 1 ether;
+        
+        hook.placeOrder{value: currency0Amount}(key, isLong);
+
+        vm.expectRevert(LiquidityJackpotHook.NothingToClaim.selector);
+
+        hook.redeem(key, currency0Amount, inputLiquidityAmount, isLong, nextExecutionTime, inputAmountToClaimFor);
+    }
+
+    function test_redeem_jackpotNotExecuted_NothingToClaim() public {
         // Set up initial conditions
         uint256 currency0Amount = 1 ether;
         uint128 inputLiquidityAmount = 10 ether;
@@ -344,33 +359,38 @@ contract LiquidityJackpotHookTest is Test, Deployers {
         hook.cashout(key, currency0Amount, inputLiquidityAmount, isLong, nextExecutionTime);
     }
 
-    // function test_cashOutOrder_success() public {
-    //     // Set up initial conditions
-    //     uint256 currency0Amount = 1 ether;
-    //     uint128 inputLiquidityAmount = 10 ether;
-    //     bool isLong = false;
-    //     uint256 nextExecutionTime = hook.getNextExecutionTime(key);
+    function test_cashOutOrder_success() public {
+        // Set up initial conditions
+        uint256 currency0Amount = 1 ether;
+        uint128 inputLiquidityAmount = 30;
+        bool isLong = false;
+        uint256 nextExecutionTime = hook.getNextExecutionTime(key);
 
-    //     hook.placeOrder{value: currency0Amount}(key, isLong, inputLiquidityAmount);
+        hook.placeOrder{value: currency0Amount}(key, isLong);
 
-    //     uint256 currentBeforeBalance = address(this).balance;
+        uint256 ramainingClaimsBefore = hook.getJackpotRemainingClaims(key, nextExecutionTime);
 
-    //     uint256 jackpotAmountBefore = hook.getJackpotAmount(key, nextExecutionTime);
+        uint256 currentBeforeBalance = address(this).balance;
 
-    //     hook.cashout(key, currency0Amount, inputLiquidityAmount, isLong, nextExecutionTime);
+        uint256 jackpotAmountBefore = hook.getJackpotAmount(key, nextExecutionTime);
 
-    //     uint256 positionId = hook.getPositionId(key, currency0Amount, isLong, inputLiquidityAmount, nextExecutionTime);
-    //     uint256 tokenBalance = hook.balanceOf(address(this), positionId);
-    //     uint256 currentAfterBalance = address(this).balance;
-    //     uint256 jackpotAmountAfter = hook.getJackpotAmount(key, nextExecutionTime);
+        hook.cashout(key, currency0Amount, inputLiquidityAmount, isLong, nextExecutionTime);
 
+        uint256 positionId = hook.getPositionId(key, currency0Amount, isLong, inputLiquidityAmount, nextExecutionTime);
+        uint256 tokenBalance = hook.balanceOf(address(this), positionId);
+        uint256 currentAfterBalance = address(this).balance;
+        uint256 jackpotAmountAfter = hook.getJackpotAmount(key, nextExecutionTime);
+        uint256 ramainingClaimsAfter = hook.getJackpotRemainingClaims(key, nextExecutionTime);
 
-    //     assertEq(jackpotAmountBefore, 1 ether);
-    //     assertTrue(positionId != 0);
-    //     assertEq(tokenBalance, 0);
-    //     assertEq(currentBeforeBalance, currentAfterBalance);
-    //     assertEq(jackpotAmountAfter, 1 ether);
-    // }
+        uint256 cashoutAmountBeforeTax = 990000000000000000;
+
+        assertEq(jackpotAmountBefore, 1 ether);
+        assertTrue(positionId != 0);
+        assertEq(tokenBalance, 0);
+        assertEq(currentBeforeBalance, currentAfterBalance - cashoutAmountBeforeTax);
+        assertEq(jackpotAmountAfter, 1 ether - 990000000000000000);
+        assertEq(ramainingClaimsBefore, ramainingClaimsAfter + 1 ether);
+    }
 
     function test_calculateCashoutAmount_maxAmount() public view {
         uint256 currency0Amount = 1 ether;
@@ -393,20 +413,20 @@ contract LiquidityJackpotHookTest is Test, Deployers {
 
         uint256 cashoutAmount = hook.calculateCashoutAmount(key, currency0Amount, isLong, inputLiquidityAmount, nextExecutionTime);
 
-        assertEq(cashoutAmount, 495000000000000000);
+        assertEq(cashoutAmount, 742500000000000000);
     }
 
     function test_calculateCashoutAmount_betStateReallyBad_halfTimeToJackpot() public {
         uint256 currency0Amount = 1 ether;
-        uint128 inputLiquidityAmount = 30;
+        uint128 inputLiquidityAmount = 1;
         bool isLong = false;
         uint256 nextExecutionTime = hook.getNextExecutionTime(key);
 
         vm.warp(block.timestamp + 12 hours);
 
-        // uint256 cashoutAmount = hook.calculateCashoutAmount(key, currency0Amount, isLong, inputLiquidityAmount, nextExecutionTime);
+        uint256 cashoutAmount = hook.calculateCashoutAmount(key, currency0Amount, isLong, inputLiquidityAmount, nextExecutionTime);
 
-        // assertEq(cashoutAmount, 0);
+        assertEq(cashoutAmount, 24750000000000000);
     }
 
 }
