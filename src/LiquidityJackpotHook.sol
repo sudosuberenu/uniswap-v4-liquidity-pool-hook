@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import {BaseHook} from "v4-periphery/BaseHook.sol";
@@ -19,9 +19,6 @@ import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 import {StateLibrary} from 'v4-core/libraries/StateLibrary.sol';
 import {BalanceDeltaLibrary} from 'v4-core/types/BalanceDelta.sol';
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from 'v4-core/types/BeforeSwapDelta.sol';
-
-import "forge-std/console.sol";
-
 
 
 contract LiquidityJackpotHook is BaseHook, ERC1155 {
@@ -47,13 +44,71 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
     error NotClaimableLongPosition();
     error NotClaimableShortPosition();
 
+
+    // Events
+    /**
+     * @dev Emitted when a user cashes out an order.
+     * @param poolId The ID of the pool.
+     * @param owner The address of the user who is cashing out.
+     * @param cashoutAmount The amount of the cashout.
+     * @param currentJackpot The current jackpot amount.
+     */
+    event CashoutOrder(
+        PoolId indexed poolId,
+        address indexed owner,
+        uint256 cashoutAmount,
+        uint256 currentJackpot
+    );
+
+    /**
+     * @dev Emitted when a user places a new order.
+     * @param poolId The ID of the pool.
+     * @param owner The address of the user placing the order.
+     * @param orderAmount The amount of the order.
+     * @param currentJackpot The current jackpot amount.
+     * @param liquidity The amount of liquidity added.
+     * @param isLong Whether the order is a long position.
+     */
+    event PlaceOrder(
+        PoolId indexed poolId,
+        address indexed owner,
+        uint256 orderAmount,
+        uint256 currentJackpot,
+        uint128 liquidity,
+        bool isLong
+    );
+
+    /**
+     * @dev Emitted when a user redeems an order.
+     * @param poolId The ID of the pool.
+     * @param owner The address of the user redeeming the order.
+     * @param redeemAmount The amount of the redeem.
+     * @param currentJackpot The current jackpot amount.
+     */
+    event RedeemOrder(
+        PoolId indexed poolId,
+        address indexed owner,
+        uint256 redeemAmount,
+        uint256 currentJackpot
+    );
+
+
     // Constructor
+    /**
+     * @dev Sets the pool manager and the URI for the ERC1155 token.
+     * @param _manager The address of the pool manager contract.
+     * @param _uri The URI for the ERC1155.
+     */
     constructor(
         IPoolManager _manager,
         string memory _uri
     ) BaseHook(_manager) ERC1155(_uri) {}
 
     // BaseHook Functions
+    /**
+     * @dev Returns the permissions required for the hook.
+     * @return A Hooks.Permissions struct with the permissions.
+     */
     function getHookPermissions()
         public
         pure
@@ -79,7 +134,11 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
             });
     }
 
-
+    /**
+     * @dev Hook function called before pool initialization.
+     * @param key The pool key.
+     * @return Selector of the function.
+     */
     function beforeInitialize(
         address,
         PoolKey calldata key,
@@ -91,6 +150,11 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return this.beforeInitialize.selector;
     }
 
+    /**
+     * @dev Hook function called before adding liquidity to the pool.
+     * @param key The pool key.
+     * @return Selector of the function.
+     */
     function beforeAddLiquidity(
         address, 
         PoolKey calldata key, 
@@ -102,6 +166,11 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return this.beforeAddLiquidity.selector;
     }
 
+    /**
+     * @dev Hook function called before removing liquidity from the pool.
+     * @param key The pool key.
+     * @return Selector of the function.
+     */
     function beforeRemoveLiquidity(
         address,
         PoolKey calldata key,
@@ -113,6 +182,11 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return this.beforeRemoveLiquidity.selector;
     }
 
+    /**
+     * @dev Hook function called after adding liquidity to the pool.
+     * @param key The pool key.
+     * @return Selector of the function and the balance delta.
+     */
     function afterAddLiquidity(
         address,
         PoolKey calldata key,
@@ -125,6 +199,11 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
+    /**
+     * @dev Hook function called after removing liquidity from the pool.
+     * @param key The pool key.
+     * @return Selector of the function and the balance delta.
+     */
     function afterRemoveLiquidity(
         address,
         PoolKey calldata key,
@@ -137,6 +216,11 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
+    /**
+     * @dev Hook function called before swapping tokens in the pool.
+     * @param key The pool key.
+     * @return Selector of the function, the swap delta, and a fee amount.
+     */
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
         external
         override
@@ -147,6 +231,11 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
+    /**
+     * @dev Hook function called after swapping tokens in the pool.
+     * @param key The pool key.
+     * @return Selector of the function and a swap amount.
+     */
     function afterSwap(
         address,
         PoolKey calldata key,
@@ -159,6 +248,11 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return (this.afterSwap.selector, 0);
     }
 
+    /**
+     * @dev Hook function called before donating tokens to the pool.
+     * @param key The pool key.
+     * @return Selector of the function.
+     */
     function beforeDonate(address, PoolKey calldata key, uint256, uint256, bytes calldata)
         external
         override
@@ -169,6 +263,11 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return this.beforeDonate.selector;
     }
 
+    /**
+     * @dev Hook function called after donating tokens to the pool.
+     * @param key The pool key.
+     * @return Selector of the function.
+     */
     function afterDonate(address, PoolKey calldata key, uint256, uint256, bytes calldata)
         external
         override
@@ -180,6 +279,12 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
     }
 
     // Core Hook External Functions
+    /**
+     * @dev Places an order in the pool.
+     * @param key The pool key.
+     * @param isLong Whether the order is a long position.
+     * @return The amount of liquidity added.
+     */
     function placeOrder(
         PoolKey calldata key,
         bool isLong
@@ -196,9 +301,19 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         jackpotAmounts[key.toId()][nextJackpotTime] += currency0Amount;
         jackpotRemainingClaims[key.toId()][nextJackpotTime] += currency0Amount;
 
+        emit PlaceOrder(key.toId(), msg.sender, currency0Amount, nextJackpotTime, inputLiquidityAmount, isLong);
+
         return inputLiquidityAmount;
     }
 
+    /**
+     * @dev Casheout a position from the pool.
+     * @param key The pool key.
+     * @param currency0Amount Amount of token0 to cash out.
+     * @param inputLiquidityAmount Amount of liquidity to cashout.
+     * @param isLong Whether the position is a long position.
+     * @param nextJackPotTime The timestamp of the next jackpot.
+     */
     function cashout(
         PoolKey calldata key,
         uint256 currency0Amount,
@@ -224,26 +339,36 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         uint256 cashoutAmount = calculateCashoutAmount(key, currency0Amount, isLong, inputLiquidityAmount, currentJackpot);
 
         _burn(msg.sender, positionId, positionTokens);
-        
         jackpotAmounts[key.toId()][currentJackpot] -= cashoutAmount;
         jackpotRemainingClaims[key.toId()][nextJackPotTime] -= positionTokens;
+
+        emit CashoutOrder(key.toId(), msg.sender, cashoutAmount, currentJackpot);
 
         payable(msg.sender).transfer(cashoutAmount);
     }
 
+    /**
+     * @dev Redeems a position from the pool.
+     * @param key The pool key.
+     * @param currency0Amount Amount of token0 to redeem.
+     * @param inputLiquidityAmount Amount of liquidity to redeem.
+     * @param isLong Whether the position is a long position.
+     * @param nextJackpotTime The timestamp of the next jackpot.
+     * @param inputAmountToClaimFor The amount to claim.
+     */
     function redeem(
         PoolKey calldata key,
         uint256 currency0Amount,
         uint128 inputLiquidityAmount,
         bool isLong,
-        uint256 nextJackPotTime,
+        uint256 nextJackpotTime,
         uint256 inputAmountToClaimFor
     ) external {
         _checkJackpot(key);
 
-        uint256 positionId = getPositionId(key, currency0Amount, isLong, inputLiquidityAmount, nextJackPotTime);
+        uint256 positionId = getPositionId(key, currency0Amount, isLong, inputLiquidityAmount, nextJackpotTime);
         uint256 positionTokens = balanceOf(msg.sender, positionId);
-        uint128 positionLiquidity = jackpotLiquidities[key.toId()][nextJackPotTime];
+        uint128 positionLiquidity = jackpotLiquidities[key.toId()][nextJackpotTime];
 
         if (positionLiquidity == 0) revert NothingToClaim();
 
@@ -259,21 +384,28 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
 
         _burn(msg.sender, positionId, inputAmountToClaimFor);
 
-        uint256 jackpotAmount = jackpotAmounts[key.toId()][nextJackPotTime];
+        uint256 jackpotAmount = jackpotAmounts[key.toId()][nextJackpotTime];
 
-        // Take some % to the Liquidity providers
+        // TODO! Take some % to the Liquidity providers
 
         uint256 userPercentage = (100 * inputAmountToClaimFor) / jackpotAmount;
 
         uint256 winningAmount = (jackpotAmount * userPercentage) / 100;
 
-        jackpotRemainingClaims[key.toId()][nextJackPotTime] -= inputAmountToClaimFor;
+        jackpotRemainingClaims[key.toId()][nextJackpotTime] -= inputAmountToClaimFor;
+
+
+        emit RedeemOrder(key.toId(), msg.sender, inputAmountToClaimFor, nextJackpotTime);
 
         payable(msg.sender).transfer(winningAmount);
     }
 
     // Internal Functions
-    // Create snapshot of the current liquidity / jackpot
+    /**
+     * @dev Checks if it's time for a new jackpot and create a snapshot of the current liquidity / jackpot
+     * @param key The pool key.
+     * @return True if a new jackpot has been set, false otherwise.
+     */
     function _checkJackpot(PoolKey calldata key) internal returns (bool) {
         uint256 currentTimestamp = block.timestamp;
         uint256 nextJackpotTime = nextJackPots[key.toId()];
@@ -290,7 +422,14 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return true;
     }
 
-    function _calculateBetState(PoolKey calldata key, uint128 orderLiquidity, bool isLong) internal view returns (uint) {
+    /**
+     * @dev Calculates the state of a bet given the current liquidity.
+     * @param key The pool key.
+     * @param orderLiquidity The liquidity of the order.
+     * @param isLong Whether the bet is a long position.
+     * @return The state of the bet as a uint256.
+     */
+    function _calculateBetState(PoolKey calldata key, uint128 orderLiquidity, bool isLong) internal view returns (uint256) {
         uint128 currentLiquidity = poolManager.getLiquidity(key.toId());
 
         uint256 betState = 0;
@@ -315,6 +454,15 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
     }
 
     // Helper Functions
+    /**
+     * @dev Generates a unique ID for a position.
+     * @param key The pool key.
+     * @param currency0Amount Amount of token0 involved in the position.
+     * @param isLong Whether the position is a long position.
+     * @param inputLiquidityAmount Amount of liquidity involved in the position.
+     * @param nextJackPot The timestamp of the next jackpot.
+     * @return The unique position ID as a uint256.
+     */
     function getPositionId(
         PoolKey calldata key,
         uint256 currency0Amount,
@@ -325,22 +473,54 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
         return uint256(keccak256(abi.encode(key.toId(), currency0Amount, isLong, inputLiquidityAmount, nextJackPot)));
     }
 
+    /**
+     * @dev Gets the timestamp of the next jackpot for a given pool.
+     * @param key The pool key.
+     * @return The timestamp of the next jackpot as a uint256.
+     */
     function getNextExecutionTime(PoolKey calldata key) public view returns (uint256) {
         return nextJackPots[key.toId()];
     }
 
+    /**
+     * @dev Gets the amount of the jackpot for a given pool and timestamp.
+     * @param key The pool key.
+     * @param nextJackPotTime The timestamp of the jackpot.
+     * @return The jackpot amount as a uint256.
+     */
     function getJackpotAmount(PoolKey calldata key, uint256 nextJackPotTime) public view returns (uint256) {
         return jackpotAmounts[key.toId()][nextJackPotTime];
     }
 
+    /**
+     * @dev Gets the remaining claims for a given pool and timestamp.
+     * @param key The pool key.
+     * @param nextJackPotTime The timestamp of the jackpot.
+     * @return The remaining claims as a uint256.
+     */
     function getJackpotRemainingClaims(PoolKey calldata key, uint256 nextJackPotTime) public view returns (uint256) {
         return jackpotRemainingClaims[key.toId()][nextJackPotTime];
     }
 
+    /**
+     * @dev Gets the liquidity for a given pool and jackpot timestamp.
+     * @param key The pool key.
+     * @param nextJackPotTime The timestamp of the jackpot.
+     * @return The liquidity amount as a uint128.
+     */
     function getJackpotLiquidity(PoolKey calldata key, uint256 nextJackPotTime) public view returns (uint128) {
         return jackpotLiquidities[key.toId()][nextJackPotTime];
     }
 
+    /**
+     * @dev Calculates the cashout amount for a given position.
+     * @param key The pool key.
+     * @param currency0Amount Amount of token0 involved in the position.
+     * @param isLong Whether the position is a long position.
+     * @param inputLiquidityAmount Amount of liquidity involved in the position.
+     * @param nextJackPot The timestamp of the next jackpot.
+     * @return The cashout amount as a uint256.
+     */
     function calculateCashoutAmount(
         PoolKey calldata key,
         uint256 currency0Amount,
@@ -356,7 +536,7 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
 
         uint256 timeFraction = (oneDayInSeconds - timeRemaining) * 1e18 / oneDayInSeconds;
 
-        int256 timeFractionInt = int256(timeFraction);  // Convert to int for calculation
+        int256 timeFractionInt = int256(timeFraction);
 
         int256 cashoutPercentage = -(timeFractionInt * timeFractionInt / 1e18) + 1e18;
         
@@ -366,7 +546,8 @@ contract LiquidityJackpotHook is BaseHook, ERC1155 {
 
         uint256 jackpotTax = cashoutAmountBeforeTax / 100;
 
-        // TODO: Consider LP part
+        // TODO! Take some % to the Liquidity providers
+
         uint256 cashoutAmountAfterTax = cashoutAmountBeforeTax - jackpotTax;
 
         return cashoutAmountAfterTax;
